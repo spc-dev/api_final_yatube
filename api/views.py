@@ -1,25 +1,23 @@
-from rest_framework import viewsets, generics
-from django.shortcuts import get_object_or_404
-from django.db.models import Q
 from django.contrib.auth import get_user_model
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import generics, viewsets
 
-from .models import Post, Comment, Follow, Group
-from .serializers import PostSerializer, CommentSerializer, FollowSerializer, GroupSerializer
+from .models import Comment, Follow, Group, Post
 from .permissions import IsOwnerOrReadOnly
+from .serializers import (CommentSerializer, FollowSerializer, GroupSerializer,
+                          PostSerializer)
 
 User = get_user_model()
 
 
 class PostViewSet(viewsets.ModelViewSet):
+    queryset = Post.objects.all()
     serializer_class = PostSerializer
     permission_classes = (IsOwnerOrReadOnly,)
-
-    def get_queryset(self):
-        queryset = Post.objects.all()
-        group_id = self.request.query_params.get('group', None)
-        if group_id is not None:
-            queryset = queryset.filter(group_id=group_id)
-        return queryset
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['group', ]
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
@@ -30,8 +28,8 @@ class CommentViewSet(viewsets.ModelViewSet):
     permission_classes = (IsOwnerOrReadOnly,)
 
     def get_queryset(self):
-        post_id = self.kwargs['id']
-        queryset = Comment.objects.filter(post__id=post_id)
+        post = get_object_or_404(Post.objects, pk=self.kwargs['id'])
+        queryset = Comment.objects.filter(post__id=post.id)
         return queryset
 
     def perform_create(self, serializer):
@@ -52,9 +50,15 @@ class FollowList(generics.ListCreateAPIView):
         queryset = Follow.objects.all()
         username = self.request.query_params.get('search', None)
         if username is not None:
-            queryset = queryset.filter(Q(user__username=username) | Q(following__username=username))
+            queryset = queryset.filter(
+                Q(user__username=username) |
+                Q(following__username=username)
+            )
         return queryset
 
     def perform_create(self, serializer):
-        following = get_object_or_404(User, username=self.request.POST.get('following'))
+        following = get_object_or_404(
+            User,
+            username=self.request.POST.get('following')
+        )
         serializer.save(user=self.request.user, following=following)
